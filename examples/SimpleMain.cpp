@@ -17,8 +17,10 @@
 #include "Globalizer.h"
 #include "calc_data.h"
 #include "input_data.h"
-#include "FileManager.h"
+#include "File_Manager.h"
 #include "direct_problem_solver.h"
+#include "least_squares_optimization.h"
+#include <filesystem>
 
 const double T0 = 273.15;
 
@@ -29,27 +31,31 @@ void get_defined_stages_map(input_data& input);
 // ------------------------------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
+	GlobalizerInitialization(argc, argv);
 
-  GlobalizerInitialization(argc, argv);
-  
-  //Инициализация - чтение из файла, запись в input и т.д.
-  //взять из "химического" main
-  input_data input;
+	//Инициализация - чтение из файла, запись в input и т.д.
+	//взять из "химического" main
+	input_data input;
 
-  parameters.MaxNumOfPoints[0] = 10;
-  parameters.Dimension = 5; // Размерность задачи
-  IProblem* problem = nullptr;
+	parameters.MaxNumOfPoints[0] = 1000;
+	parameters.Dimension = 5; // Размерность задачи
+	parameters.localRefineSolution = FinalStart;
+	parameters.localIteration = 100;
 
-	//"C:\Users\Ms.evil_Cat\Desktop\Downloads\input_data_new_5_1_temp.txt"
-  std::string input_path = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5_1_temp.txt";
+	IProblem* problem = nullptr;
 
-  FileManager::read_input_data(input_path, input);
+	//"C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5_1_temp.txt"
+	std::string input_path = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5_2_temp.txt";// "D:\\input_data_new_5_1_temp.txt";
+	std::string output_filename = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\output_new_5_2_temp.csv"; //"D:\\output_new_5_1_temp.csv";
 
-  need_convert convert_param = NEED_CONVERT_TO_RATIOS;
-  if (argc > 3)
-    convert_param = need_convert(atoi(argv[3]));
+	FileManager::read_input_data(input_path, input);
 
-  convert_concentrations(input, convert_param);
+	need_convert convert_param = NEED_CONVERT_TO_RATIOS;
+
+	//  if (argc > 3)
+	//    convert_param = need_convert(atoi(argv[3]));
+
+	convert_concentrations(input, convert_param);
 
 	input.t_kelvin.resize(input.n_temps); // Температура в K
 	for (size_t i = 0; i < input.n_temps; ++i)
@@ -79,66 +85,93 @@ int main(int argc, char* argv[])
 		input.weights.resize(input.n_dims, 1.);
 	}
 
-  problem = new ProblemFromFunctionPointers(parameters.Dimension, // размерность задачи
-		{ 11, 0.2, 0.26, 1.9, 1.2 }, // нижняя граница
-		{ 13, 8, 3.2, 6.7, 13.8 }, //  верхняя граница
-    std::vector<std::function<double(const double*)>>(1, [&input, &c_data](const double* y)
-      {
-				std::vector<double> result(5);
+	// цикл по температурам
 
-				// k1: [11, 13] -> [1e11, 5e13]
-				result[0] = 1e11 + (y[0] - 11.0) * (5e13 - 1e11) / (13.0 - 11.0);
+	for (size_t t = 0; t < input.n_temps; ++t) {
 
-				// k2: [0.2, 8] -> [20, 800]
-				result[1] = 20.0 + (y[1] - 0.2) * 100.0;
 
-				// k3: [0.26, 3.2] -> [26000, 320000]
-				result[2] = 26000.0 + (y[2] - 0.26) * 100000.0;
 
-				// k4: [1.9, 6.7] -> [1900, 6700]
-				result[3] = 1900.0 + (y[3] - 1.9) * 1000.0;
+		/*
+			- 0.027 <= k1 <= 0.009
+			- 127.67 <= k2 <= 382.99
+			- 1.57 <= k3 <= 0.52
+			- 87 <= k4 <= 261
+			- 0.024 <= k5 <= 0.071
+			*/
+		problem = new ProblemFromFunctionPointers(parameters.Dimension, // размерность задачи
+			{ -0.027, -127.67 , -1.57,  -87, -0.024 }, // нижняя граница
+			{ 0.009,  382.99,   0.52,  261,  0.071 }, //  верхняя граница
+			std::vector<std::function<double(const double*)>>(1, [&input, &c_data, &t](const double* y)
+				{
+					input.initial_k_base[t].assign(y, y + parameters.Dimension);
+		double res = DirectProblemSolver::calc_y_and_get_error(input.initial_k_base[t], input.y_exp_conv[t], c_data[t].y, c_data[t].W, input, input.degrees);
+		return res;
+				}) // критерий 
+		);
 
-				// k5: [1.2, 13.8] -> [12000, 138000]
-				result[4] = 12000.0 + (y[4] - 1.2) * 10000.0;
+		problem->Initialize();
 
-				input.initial_k_base[0] =  { 0.1, 0.1, 0.1, 0.1, 0.1 };//result;
+		// Решатель
+		Solver solver(problem);
 
-				double res = DirectProblemSolver::calc_y_and_get_error(input.initial_k_base[0], input.y_exp_conv[0], c_data[0].y, c_data[0].W,
-				input, input.degrees);
-					return res;
-      }) // критерий 
-  );
+		// Решаем задачу
+		if (solver.Solve() != SYSTEM_OK)
+			throw EXCEPTION("Error: solver.Solve crash!!!");
 
-  problem->Initialize();
+		//Значения параметров для лучшей найденной точки (в нашем диапазоне)
+		const double* resY = solver.GetSolutionResult()->BestTrial->y;
 
-  // Решатель
-  Solver solver(problem);
+		input.initial_k_base[t].assign(resY, resY + parameters.Dimension);
 
-  // Решаем задачу
-  if (solver.Solve() != SYSTEM_OK)
-    throw EXCEPTION("Error: solver.Solve crash!!!");
+		c_data[t].k = input.initial_k_base[t];
 
-	//Значения параметров для лучшей найденной точки (в нашем диапазоне)
-	const double* resY = solver.GetSolutionResult()->BestTrial->y;
+	}
+	// конец цикла
+	std::vector<std::vector<double>> k_calc(input.n_temps, std::vector<double>(input.n_stages));
+	std::vector<double> k0(input.n_stages), Ea(input.n_stages);
 
-	std::vector<double> result(5);
+	if (input.n_temps > 1)
+		LeastSquaresOptimization::least_squares_optimize(input, c_data, k_calc, k0, Ea, 0, input.n_temps);
+	else
+		k_calc[0] = c_data[0].k;
+	//k_calc[0] = c_data[0].k;
 
-	// k1: [11, 13] -> [1e11, 5e13]
-	result[0] = 1e11 + (resY[0] - 11.0) * (5e13 - 1e11) / (13.0 - 11.0);
+	for (size_t t = 0; t < input.n_temps; ++t)
+	{
+		if (input.variable_parameter == 0) // Подбираются константы скоростей
+		{
 
-	// k2: [0.2, 8] -> [20, 800]
-	result[1] = 20.0 + (resY[1] - 0.2) * 100.0;
+			DirectProblemSolver::calc_y_and_get_error(k_calc[t], input.y_exp_conv[t],
+				c_data[t].y, c_data[t].W, input, input.degrees);
 
-	// k3: [0.26, 3.2] -> [26000, 320000]
-	result[2] = 26000.0 + (resY[2] - 0.26) * 100000.0;
 
-	// k4: [1.9, 6.7] -> [1900, 6700]
-	result[3] = 1900.0 + (resY[3] - 1.9) * 1000.0;
 
-	// k5: [1.2, 13.8] -> [12000, 138000]
-	result[4] = 12000.0 + (resY[4] - 1.2) * 10000.0;
+		}
+		else // Подбираются порядки
+		{
+			DirectProblemSolver::calc_y_and_get_error(c_data[t].k, input.y_exp_conv[t],
+				c_data[t].y, c_data[t].W, input, c_data[t].degrees);
+		}
+		std::cout << "t = " << input.T[t] << std::endl;
+		for (int i = 0; i < input.n_dims; ++i)
+			std::cout << "y[" << i << "] = " << c_data[t].y[i] << std::endl;
+	}
 
-	input.initial_k_base[0] =  { 0.1, 0.1, 0.1, 0.1, 0.1 };//result;
+	if (input.variable_parameter == 0) // Подбираются константы скоростей
+		FileManager::print_results(output_filename, input, c_data, k_calc, k0, Ea);
+	else // Подбираются порядки
+	{
+		for (size_t i = 0; i < input.n_stages; ++i)
+			input.Ea[i] = input.Ea[i] * j_to_cal / 1000;
+		FileManager::print_results(output_filename, input, c_data, k_calc, input.k0, input.Ea);
+	}
+
+	std::cout << std::endl;
+	for (int i = 0; i < input.n_stages; ++i)
+		std::cout << "Ea[" << i << "] = " << Ea[i] << std::endl;
+
+
+	/*
 
 	DirectProblemSolver::calc_y_and_get_error(input.initial_k_base[0], input.y_exp_conv[0],
 		c_data[0].y, c_data[0].W, input, input.degrees);
@@ -149,8 +182,8 @@ int main(int argc, char* argv[])
 		std::cout << "y[" << i << "] = " << c_data[0].y[i] << std::endl;
 		//result_y[t][i] = c_data[t].y[i];
 	}
-
-  return 0;
+	*/
+	return 0;
 }
 
 void convert_concentrations(input_data& input, need_convert convert_param)

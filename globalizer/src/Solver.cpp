@@ -109,8 +109,8 @@ int Solver::CheckParameters()
       }
     }
   }
-
-  if (parameters.MaxNumOfPoints[0] > 100 
+  /*
+  if (parameters.MaxNumOfPoints[0] > 100
     && parameters.NumThread.GetIsChange() == false && parameters.NumPoints.GetIsChange() == false
     && parameters.TypeCalculation == OMP)
   {
@@ -125,7 +125,7 @@ int Solver::CheckParameters()
       parameters.r = parameters.r * 2;
     }
   }
-
+  */
   if (parameters.IsPlot)
   {
     if (parameters.iterPointsSavePath.GetIsChange() == false)
@@ -161,7 +161,7 @@ void Solver::MpiCalculation()
     inputSet.Resize(parameters.mpiBlockSize);
     outputSet.Resize(parameters.mpiBlockSize);
 
-    for (unsigned int j = 0; j < parameters.mpiBlockSize; j++) 
+    for (unsigned int j = 0; j < parameters.mpiBlockSize; j++)
     {
       inputSet.trials[j] = TrialFactory::CreateTrial();
       // Получаем координаты точки
@@ -272,7 +272,7 @@ int Solver::Solve()
   {
     if (CheckParameters())
       return 1;
-        
+
     if ((parameters.calculationsArray[0] == MPI_calc) && (parameters.GetProcNum() > 1) && (parameters.GetProcRank() > 0))
     {
       MpiCalculation();
@@ -335,7 +335,7 @@ int Solver::Solve()
   }
   if (parameters.GetProcRank() == 0)
   {
-    if (parameters.GetProcNum() > 1) 
+    if (parameters.GetProcNum() > 1)
     {
       int childNum = parameters.GetProcNum() - 1;
       int curr_child = 0;
@@ -428,18 +428,18 @@ int Solver::CreateProcess()
 
 
 
-    if (pData == 0)
-    {
-      pData = new SearchData(_problem->GetNumberOfFunctions());
-      int qSize = GLOBALIZER_MAX((int)pow(2.0, (int)(log((double)parameters.MaxNumOfPoints[pTask->GetProcLevel()])
-        / log(2.0) - 2)) - 1, 1023);
-      pData->ResizeQueue(qSize);
-    }
-    else
-    {
-      pData->Clear();
-    }
-  
+  if (pData == 0)
+  {
+    pData = new SearchData(_problem->GetNumberOfFunctions());
+    int qSize = GLOBALIZER_MAX((int)pow(2.0, (int)(log((double)parameters.MaxNumOfPoints[pTask->GetProcLevel()])
+      / log(2.0) - 2)) - 1, 1023);
+    pData->ResizeQueue(qSize);
+  }
+  else
+  {
+    pData->Clear();
+  }
+
   // Инициализируем числа с расширенной точностью
   InitAutoPrecision();
 

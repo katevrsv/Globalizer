@@ -119,6 +119,7 @@ Calculation* CalculationFactory::CreateCalculation(Task& _pTask, Evolvent* evolv
     {
         if ((parameters.TypeCalculation == OMP))
         {
+          
             if (Calculation::leafCalculation == 0)
             {
                 calculation = new OMPCalculation(_pTask);
