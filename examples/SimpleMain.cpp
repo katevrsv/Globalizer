@@ -42,11 +42,11 @@ int main(int argc, char* argv[])
 	parameters.localRefineSolution = FinalStart;
 	parameters.localIteration = 100;
 
-	IProblem* problem = nullptr;
+
 
 	//"C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5_1_temp.txt"
-	std::string input_path = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5_2_temp.txt";// "D:\\input_data_new_5_1_temp.txt";
-	std::string output_filename = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\output_new_5_2_temp.csv"; //"D:\\output_new_5_1_temp.csv";
+	std::string input_path = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\input_data_new_5.txt";// "D:\\input_data_new_5_1_temp.txt";
+	std::string output_filename = "C:\\Users\\Ms.evil_Cat\\Desktop\\Downloads\\output_new_5.csv"; //"D:\\output_new_5_1_temp.csv";
 
 	FileManager::read_input_data(input_path, input);
 
@@ -85,9 +85,12 @@ int main(int argc, char* argv[])
 		input.weights.resize(input.n_dims, 1.);
 	}
 
-	// цикл по температурам
+	std::vector<IProblem*> problem(input.n_temps);
+	std::vector< Solver*> solver(input.n_temps);
 
-	for (size_t t = 0; t < input.n_temps; ++t) {
+	// цикл по температурам
+	for (size_t t = 0; t < input.n_temps; ++t)
+	{
 
 
 
@@ -98,9 +101,9 @@ int main(int argc, char* argv[])
 			- 87 <= k4 <= 261
 			- 0.024 <= k5 <= 0.071
 			*/
-		problem = new ProblemFromFunctionPointers(parameters.Dimension, // размерность задачи
-			{ -0.027, -127.67 , -1.57,  -87, -0.024 }, // нижняя граница
-			{ 0.009,  382.99,   0.52,  261,  0.071 }, //  верхняя граница
+		problem[t] = new ProblemFromFunctionPointers(parameters.Dimension, // размерность задачи
+			{ -10.65, -17.15 , -8.40,  -13.84, -0.38 }, // нижняя граница
+			{ 13.31,  51.46,   11.76,  41.53,  0.63 }, //  верхняя граница
 			std::vector<std::function<double(const double*)>>(1, [&input, &c_data, &t](const double* y)
 				{
 					input.initial_k_base[t].assign(y, y + parameters.Dimension);
@@ -109,17 +112,17 @@ int main(int argc, char* argv[])
 				}) // критерий 
 		);
 
-		problem->Initialize();
+		problem[t]->Initialize();
 
 		// Решатель
-		Solver solver(problem);
+		solver[t] = new Solver(problem[t]);
 
 		// Решаем задачу
-		if (solver.Solve() != SYSTEM_OK)
+		if (solver[t]->Solve() != SYSTEM_OK)
 			throw EXCEPTION("Error: solver.Solve crash!!!");
 
 		//Значения параметров для лучшей найденной точки (в нашем диапазоне)
-		const double* resY = solver.GetSolutionResult()->BestTrial->y;
+		const double* resY = solver[t]->GetSolutionResult()->BestTrial->y;
 
 		input.initial_k_base[t].assign(resY, resY + parameters.Dimension);
 
